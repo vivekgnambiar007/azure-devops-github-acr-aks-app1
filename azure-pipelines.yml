@@ -36,7 +36,7 @@ stages:
       displayName: Build and push an image to container registry
       inputs:
         command: buildAndPush
-        repository: '$(containerRegistry)/$(imageRepository)'   # fully qualified ACR repo
+        repository: '$(containerRegistry)/$(imageRepository)'   # Fully qualified ACR repo
         dockerfile: $(dockerfilePath)
         containerRegistry: $(dockerRegistryServiceConnection)
         tags: |
