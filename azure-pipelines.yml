@@ -27,7 +27,7 @@ stages:
     pool:
       vmImage: $(vmImageName)
     steps:
-    # Optional: list Docker images
+    # Optional: list Docker images before build
     - script: docker images
       displayName: List Docker Images
 
@@ -36,9 +36,9 @@ stages:
       displayName: Build and push an image to container registry
       inputs:
         command: buildAndPush
-        repository: '$(containerRegistry)/$(imageRepository)'  # Fully qualified ACR repo
+        repository: '$(containerRegistry)/$(imageRepository)'   # fully qualified ACR repo
         dockerfile: $(dockerfilePath)
         containerRegistry: $(dockerRegistryServiceConnection)
         tags: |
           $(tag)
-          latest  # optional additional tag
+          latest
