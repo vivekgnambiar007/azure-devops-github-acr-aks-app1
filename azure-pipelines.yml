@@ -10,8 +10,8 @@ variables:
   dockerBuildContext: '$(Build.SourcesDirectory)/Git-Repository-files'
   tag: '$(Build.BuildId)'
 
-  # Azure subscription service connection (Service Principal)
-  azureSubscription: 'AzureDevOps-Subscription-01'  # Replace with your Azure DevOps service connection name
+  # Azure subscription service connection
+  azureSubscription: 'AzureDevOps-Subscription-01'
 
   # Agent VM
   vmImageName: 'ubuntu-latest'
@@ -38,21 +38,34 @@ stages:
           $(dockerBuildContext)
       displayName: Build Docker Image
 
-    # 3. Login to Azure & ACR using service connection
+    # 3a. Login to ACR using Azure Service Connection
     - task: AzureCLI@2
-      displayName: Login to ACR
+      displayName: Login to ACR (Service Connection)
       inputs:
         azureSubscription: $(azureSubscription)
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
-          echo "Logging in to ACR..."
+          echo ">>> Attempting ACR login via Service Connection..."
           acrName=$(echo "$(containerRegistry)" | cut -d '.' -f1)
-          az acr login --name $acrName
+          az acr login --name $acrName && echo ">>> Service Connection login SUCCESS" || echo ">>> Service Connection login FAILED"
+
+    # 3b. Fallback: Login to ACR using inline credentials
+    - script: |
+        echo ">>> Attempting ACR login via hardcoded credentials..."
+        echo "pRlfy8/MSjkU+myjis8s1JRKuVgB9thgR0wety+bBQ+ACRBFXJvf" | \
+          docker login aksdevopsacr1.azurecr.io \
+          --username aksdevopsacr1 \
+          --password-stdin \
+          && echo ">>> Docker login SUCCESS" || echo ">>> Docker login FAILED"
+      displayName: Docker Login to ACR (Fallback - Inline Creds)
 
     # 4. Push Docker image to ACR
     - script: |
+        echo ">>> Pushing image with tag: $(tag)"
         docker push $(containerRegistry)/$(imageRepository):$(tag)
+
+        echo ">>> Pushing image with tag: latest"
         docker push $(containerRegistry)/$(imageRepository):latest
       displayName: Push Docker Image to ACR
 
@@ -65,12 +78,12 @@ stages:
         scriptLocation: inlineScript
         inlineScript: |
           acrName=$(echo "$(containerRegistry)" | cut -d '.' -f1)
-          echo "Checking for tags in repository $(imageRepository)..."
+          echo ">>> Checking repository $(imageRepository) for pushed tags..."
           tags=$(az acr repository show-tags --name $acrName --repository $(imageRepository) --output tsv)
 
-          echo "Found tags: $tags"
+          echo ">>> Found tags: $tags"
           if [[ ! " $tags " =~ " $(tag) " ]]; then
-              echo "ERROR: Image $(imageRepository):$(tag) not found in ACR!"
+              echo ">>> ERROR: Image $(imageRepository):$(tag) not found in ACR!"
               exit 1
           fi
-          echo "Image $(imageRepository):$(tag) verified successfully."
+          echo ">>> Image $(imageRepository):$(tag) verified successfully."
