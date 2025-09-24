@@ -3,7 +3,7 @@ trigger:
 - master
 
 variables:
-  # Azure Container Registry (ACR)
+  # Azure Container Registry (ACR1)
   containerRegistry: 'aksdevopsacr1.azurecr.io'
   imageRepository: 'vivekgnambiarazuredevopsgithubacraksapp'
   dockerfilePath: '$(Build.SourcesDirectory)/Git-Repository-files/Dockerfile'
