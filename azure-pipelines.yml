@@ -1,4 +1,4 @@
-# Azure DevOps Pipeline: Build, Push, and Verify Docker Image (SP-only)
+# Azure DevOps Pipeline: Build, Push, and Verify Docker Image (SP-only, fixed)
 trigger:
 - master
 
@@ -67,7 +67,23 @@ stages:
           echo "✅ Docker CLI logged in successfully"
 
     # -----------------------------
-    # 4. Push Docker image to ACR
+    # 4. Optional: Wait for Role Propagation
+    # -----------------------------
+    - script: |
+        acrName=$(echo "$(containerRegistry)" | cut -d '.' -f1)
+        for i in {1..6}; do
+          if az acr repository list --name $acrName --output tsv >/dev/null 2>&1; then
+              echo "SP has access to ACR"
+              break
+          else
+              echo "SP does not have access yet, sleeping 10s..."
+              sleep 10
+          fi
+        done
+      displayName: Wait for Role Propagation (Optional)
+
+    # -----------------------------
+    # 5. Push Docker image to ACR
     # -----------------------------
     - script: |
         echo ">>> Pushing image with tag: $(tag)"
@@ -78,7 +94,7 @@ stages:
       displayName: Push Docker Image to ACR
 
     # -----------------------------
-    # 5. Verify image exists in ACR
+    # 6. Verify image exists in ACR
     # -----------------------------
     - task: AzureCLI@2
       displayName: Verify Docker Image in ACR
