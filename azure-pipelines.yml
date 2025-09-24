@@ -1,4 +1,4 @@
-# Azure DevOps Pipeline: Build, Push, Verify Docker Image (OIDC + Secret-Free)
+# Azure DevOps Pipeline: Build, Push, Verify Docker Image (OIDC via Bash)
 trigger:
 - master
 
@@ -7,8 +7,12 @@ variables:
   containerRegistry: 'aksdevopsacr1.azurecr.io'
   imageRepository: 'vivekgnambiarazuredevopsgithubacraksapp'
   dockerfilePath: '$(Build.SourcesDirectory)/Git-Repository-files/Dockerfile'
-  dockerBuildContext: '$(Build.SourcesDirectory)/Git-Repository-files'  # Folder containing Dockerfile + index.html
+  dockerBuildContext: '$(Build.SourcesDirectory)/Git-Repository-files'
   tag: '$(Build.BuildId)'
+
+  # Service Principal OIDC details
+  tenantId: 'c160a942-c869-429f-8a96-f8c8296d57db'   # Your tenant ID
+  appId: '2e4d372b-9ed2-48a7-af46-3a20d47866c1'       # Your service principal/app registration
 
   # Agent VM
   vmImageName: 'ubuntu-latest'
@@ -26,7 +30,7 @@ stages:
     - script: docker images
       displayName: List Docker Images
 
-    # 2. Build Docker image (correct context)
+    # 2. Build Docker image
     - script: |
         docker build \
           -t $(containerRegistry)/$(imageRepository):$(tag) \
@@ -35,17 +39,18 @@ stages:
           $(dockerBuildContext)
       displayName: Build Docker Image
 
-    # 3. Login to ACR using OIDC (secret-free)
-    - task: AzureCLI@2
-      displayName: Login to ACR via OIDC
-      inputs:
-        azureSubscription: ''         # Leave empty
-        authentication: 'OIDC'        # Use preview OIDC authentication
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          echo "Logging in to ACR..."
-          az acr login --name $(containerRegistry | cut -d '.' -f1)
+    # 3. Login to Azure via OIDC and ACR
+    - bash: |
+        echo "Logging in to Azure via OIDC..."
+        # Use federated token from pipeline
+        az login --service-principal \
+          --tenant $(tenantId) \
+          --username $(appId) \
+          --federated-token $AZURE_FEDERATED_TOKEN
+
+        echo "Logging in to ACR..."
+        az acr login --name $(containerRegistry | cut -d '.' -f1)
+      displayName: Login to Azure & ACR via OIDC
 
     # 4. Push Docker image to ACR
     - script: |
@@ -54,20 +59,14 @@ stages:
       displayName: Push Docker Image to ACR
 
     # 5. Verify image exists in ACR
-    - task: AzureCLI@2
-      displayName: Verify image in ACR
-      inputs:
-        azureSubscription: ''         # Leave empty
-        authentication: 'OIDC'        # Use OIDC login
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          echo "Checking for tags in repository $(imageRepository)..."
-          tags=$(az acr repository show-tags --name $(containerRegistry | cut -d '.' -f1) --repository $(imageRepository) --output tsv)
+    - bash: |
+        echo "Checking for tags in repository $(imageRepository)..."
+        tags=$(az acr repository show-tags --name $(containerRegistry | cut -d '.' -f1) --repository $(imageRepository) --output tsv)
 
-          echo "Found tags: $tags"
-          if [[ ! " $tags " =~ " $(tag) " ]]; then
-              echo "ERROR: Image $(imageRepository):$(tag) not found in ACR!"
-              exit 1
-          fi
-          echo "Image $(imageRepository):$(tag) verified successfully."
+        echo "Found tags: $tags"
+        if [[ ! " $tags " =~ " $(tag) " ]]; then
+            echo "ERROR: Image $(imageRepository):$(tag) not found in ACR!"
+            exit 1
+        fi
+        echo "Image $(imageRepository):$(tag) verified successfully."
+      displayName: Verify Docker Image in ACR
