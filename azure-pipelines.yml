@@ -7,6 +7,7 @@ variables:
   containerRegistry: 'aksdevopsacr1.azurecr.io'
   imageRepository: 'vivekgnambiarazuredevopsgithubacraksapp'
   dockerfilePath: '$(Build.SourcesDirectory)/Git-Repository-files/Dockerfile'
+  dockerBuildContext: '$(Build.SourcesDirectory)/Git-Repository-files'  # Correct build context
   tag: '$(Build.BuildId)'
 
   # Agent VM
@@ -25,9 +26,13 @@ stages:
     - script: docker images
       displayName: List Docker Images
 
-    # 2. Build Docker image
+    # 2. Build Docker image (correct context)
     - script: |
-        docker build -t $(containerRegistry)/$(imageRepository):$(tag) -t $(containerRegistry)/$(imageRepository):latest -f $(dockerfilePath) .
+        docker build \
+          -t $(containerRegistry)/$(imageRepository):$(tag) \
+          -t $(containerRegistry)/$(imageRepository):latest \
+          -f $(dockerfilePath) \
+          $(dockerBuildContext)
       displayName: Build Docker Image
 
     # 3. Login to ACR using OIDC
