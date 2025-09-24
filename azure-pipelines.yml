@@ -35,11 +35,12 @@ stages:
           $(dockerBuildContext)
       displayName: Build Docker Image
 
-    # 3. Login to ACR using OIDC
+    # 3. Login to ACR using OIDC (secret-free)
     - task: AzureCLI@2
       displayName: Login to ACR via OIDC
       inputs:
-        useAzureAD: true
+        azureSubscription: ''       # Leave empty
+        useAzureAD: true            # Enables OIDC login
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
@@ -56,7 +57,8 @@ stages:
     - task: AzureCLI@2
       displayName: Verify image in ACR
       inputs:
-        useAzureAD: true
+        azureSubscription: ''       # Leave empty
+        useAzureAD: true            # Enables OIDC login
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
