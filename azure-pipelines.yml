@@ -1,4 +1,4 @@
-# Azure DevOps Pipeline: Build, Push, Verify Docker Image
+# Azure DevOps Pipeline: Build, Push, Verify Docker Image (SP-only secure)
 trigger:
 - master
 
@@ -25,6 +25,46 @@ stages:
     pool:
       vmImage: $(vmImageName)
     steps:
+    # -----------------------------
+    # 0. Ensure SP has ACR access
+    # -----------------------------
+    - task: AzureCLI@2
+      displayName: 'Assign AcrPull/AcrPush Roles Automatically'
+      inputs:
+        azureSubscription: $(azureSubscription)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "Detecting Service Principal and Subscription..."
+          SP_APP_ID=$(az account show --query user.name -o tsv)
+          SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+          
+          echo "SP AppId detected: $SP_APP_ID"
+          echo "Subscription ID detected: $SUBSCRIPTION_ID"
+
+          acrName=$(echo "$(containerRegistry)" | cut -d '.' -f1)
+          echo "ACR Name detected: $acrName"
+
+          # Get ACR resource ID
+          ACR_ID=$(az acr show --name $acrName --subscription $SUBSCRIPTION_ID --query id -o tsv)
+          if [ -z "$ACR_ID" ]; then
+            echo "Error: Could not find ACR $acrName in subscription $SUBSCRIPTION_ID"
+            exit 1
+          fi
+
+          # Assign AcrPull role
+          echo "Assigning AcrPull role..."
+          az role assignment create --assignee $SP_APP_ID --role AcrPull --scope $ACR_ID || true
+
+          # Assign AcrPush role
+          echo "Assigning AcrPush role..."
+          az role assignment create --assignee $SP_APP_ID --role AcrPush --scope $ACR_ID || true
+
+          # Verify assignments
+          echo "Verifying role assignments..."
+          az role assignment list --assignee $SP_APP_ID --scope $ACR_ID --output table
+          echo "✅ Service Principal now has pull/push access to ACR: $acrName"
+
     # 1. List local Docker images
     - script: docker images
       displayName: List Docker Images
@@ -38,15 +78,18 @@ stages:
           $(dockerBuildContext)
       displayName: Build Docker Image
 
-    # 3b. Fallback: Login to ACR using inline credentials
-    - script: |
-        echo ">>> Attempting ACR login via hardcoded credentials..."
-        echo "pRlfy8/MSjkU+myjis8s1JRKuVgB9thgR0wety+bBQ+ACRBFXJvf" | \
-          docker login aksdevopsacr1.azurecr.io \
-          --username aksdevopsacr1 \
-          --password-stdin \
-          && echo ">>> Docker login SUCCESS" || echo ">>> Docker login FAILED"
-      displayName: Docker Login to ACR (Fallback - Inline Creds)
+    # 3. Login to ACR using Service Principal (via Azure CLI)
+    - task: AzureCLI@2
+      displayName: 'Login to ACR via Service Principal'
+      inputs:
+        azureSubscription: $(azureSubscription)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          acrName=$(echo "$(containerRegistry)" | cut -d '.' -f1)
+          echo "Logging in to ACR: $acrName"
+          az acr login --name $acrName
+          echo "✅ Logged in to ACR successfully"
 
     # 4. Push Docker image to ACR
     - script: |
