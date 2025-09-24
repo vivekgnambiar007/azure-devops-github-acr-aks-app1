@@ -38,18 +38,6 @@ stages:
           $(dockerBuildContext)
       displayName: Build Docker Image
 
-    # 3a. Login to ACR using Azure Service Connection
-    - task: AzureCLI@2
-      displayName: Login to ACR (Service Connection)
-      inputs:
-        azureSubscription: $(azureSubscription)
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          echo ">>> Attempting ACR login via Service Connection..."
-          acrName=$(echo "$(containerRegistry)" | cut -d '.' -f1)
-          az acr login --name $acrName && echo ">>> Service Connection login SUCCESS" || echo ">>> Service Connection login FAILED"
-
     # 3b. Fallback: Login to ACR using inline credentials
     - script: |
         echo ">>> Attempting ACR login via hardcoded credentials..."
