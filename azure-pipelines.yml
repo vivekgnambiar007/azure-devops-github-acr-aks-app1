@@ -1,4 +1,4 @@
-# Azure DevOps Pipeline: Build, Push, and Verify Docker Image (SP-only, Docker@2)
+# Azure DevOps Pipeline: Build, Push, and Verify Docker Image (SP-only, azurerm)
 trigger:
 - master
 
@@ -73,22 +73,44 @@ stages:
       displayName: List Docker Images
 
     # -----------------------------
-    # 2. Build and Push Docker image using Docker@2
+    # 2. Build Docker image
     # -----------------------------
-    - task: Docker@2
-      displayName: Build and Push Docker Image
-      inputs:
-        containerRegistry: $(azureSubscription) # Uses the SP in the service connection
-        repository: $(imageRepository)
-        command: buildAndPush
-        Dockerfile: $(dockerfilePath)
-        buildContext: $(dockerBuildContext)
-        tags: |
-          $(tag)
-          latest
+    - script: |
+        docker build \
+          -t $(containerRegistry)/$(imageRepository):$(tag) \
+          -t $(containerRegistry)/$(imageRepository):latest \
+          -f $(dockerfilePath) \
+          $(dockerBuildContext)
+      displayName: Build Docker Image
 
     # -----------------------------
-    # 3. Verify image exists in ACR
+    # 3. Login to ACR via Service Principal
+    # -----------------------------
+    - task: AzureCLI@2
+      displayName: 'Login to ACR via Service Principal'
+      inputs:
+        azureSubscription: $(azureSubscription)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          acrName=$(echo "$(containerRegistry)" | cut -d '.' -f1)
+          echo "Logging in to ACR: $acrName"
+          az acr login --name $acrName
+          echo "✅ Logged in to ACR successfully"
+
+    # -----------------------------
+    # 4. Push Docker image to ACR
+    # -----------------------------
+    - script: |
+        echo ">>> Pushing image with tag: $(tag)"
+        docker push $(containerRegistry)/$(imageRepository):$(tag)
+
+        echo ">>> Pushing image with tag: latest"
+        docker push $(containerRegistry)/$(imageRepository):latest
+      displayName: Push Docker Image to ACR
+
+    # -----------------------------
+    # 5. Verify image exists in ACR
     # -----------------------------
     - task: AzureCLI@2
       displayName: Verify Docker Image in ACR
