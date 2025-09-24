@@ -1,4 +1,4 @@
-# Azure DevOps Pipeline: Build, Push, Verify Docker Image
+# Azure DevOps Pipeline: Build, Push, Verify Docker Image (OIDC + Secret-Free)
 trigger:
 - master
 
@@ -8,9 +8,6 @@ variables:
   imageRepository: 'vivekgnambiarazuredevopsgithubacraksapp'
   dockerfilePath: '$(Build.SourcesDirectory)/Git-Repository-files/Dockerfile'
   tag: '$(Build.BuildId)'
-
-  # Docker service connection (Push & Pull)
-  dockerRegistryServiceConnection: '4650bbd6-f888-4909-85e3-55678c2a9d93'
 
   # Agent VM
   vmImageName: 'ubuntu-latest'
@@ -28,29 +25,36 @@ stages:
     - script: docker images
       displayName: List Docker Images
 
-    # 2. Build and push Docker image to ACR
-    - task: Docker@2
-      displayName: Build and push Docker image
-      inputs:
-        command: buildAndPush
-        repository: '$(containerRegistry)/$(imageRepository)'
-        dockerfile: $(dockerfilePath)
-        containerRegistry: $(dockerRegistryServiceConnection)
-        tags: |
-          $(tag)
-          latest
+    # 2. Build Docker image
+    - script: |
+        docker build -t $(containerRegistry)/$(imageRepository):$(tag) -t $(containerRegistry)/$(imageRepository):latest -f $(dockerfilePath) .
+      displayName: Build Docker Image
 
-    # 3. Verify the image exists in ACR using OIDC (no SP secret)
+    # 3. Login to ACR using OIDC
     - task: AzureCLI@2
-      displayName: Verify image in ACR
+      displayName: Login to ACR via OIDC
       inputs:
-        useAzureAD: true         # Enable OIDC authentication
+        useAzureAD: true
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
           echo "Logging in to ACR..."
           az acr login --name $(containerRegistry | cut -d '.' -f1)
-          
+
+    # 4. Push Docker image to ACR
+    - script: |
+        docker push $(containerRegistry)/$(imageRepository):$(tag)
+        docker push $(containerRegistry)/$(imageRepository):latest
+      displayName: Push Docker Image to ACR
+
+    # 5. Verify image exists in ACR
+    - task: AzureCLI@2
+      displayName: Verify image in ACR
+      inputs:
+        useAzureAD: true
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
           echo "Checking for tags in repository $(imageRepository)..."
           tags=$(az acr repository show-tags --name $(containerRegistry | cut -d '.' -f1) --repository $(imageRepository) --output tsv)
 
