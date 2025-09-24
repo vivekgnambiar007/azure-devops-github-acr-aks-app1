@@ -1,4 +1,4 @@
-# Azure DevOps Pipeline: Build, Push, and Verify Docker Image (SP-only, fixed)
+# Azure DevOps Pipeline: Build, Push, and Verify Docker Image (SP-only)
 trigger:
 - master
 
@@ -27,60 +27,6 @@ stages:
     steps:
 
     # -----------------------------
-    # 0. Ensure SP has ACR access
-    # -----------------------------
-    - task: AzureCLI@2
-      displayName: 'Assign AcrPull/AcrPush Roles Automatically'
-      inputs:
-        azureSubscription: $(azureSubscription)
-        scriptType: 'bash'
-        scriptLocation: 'inlineScript'
-        inlineScript: |
-          echo "Detecting Service Principal and Subscription..."
-          SP_APP_ID=$(az account show --query user.name -o tsv)
-          SUBSCRIPTION_ID=$(az account show --query id -o tsv)
-          
-          echo "SP AppId detected: $SP_APP_ID"
-          echo "Subscription ID detected: $SUBSCRIPTION_ID"
-
-          acrName=$(echo "$(containerRegistry)" | cut -d '.' -f1)
-          echo "ACR Name detected: $acrName"
-
-          # Get ACR resource ID
-          ACR_ID=$(az acr show --name $acrName --subscription $SUBSCRIPTION_ID --query id -o tsv)
-          if [ -z "$ACR_ID" ]; then
-            echo "Error: Could not find ACR $acrName in subscription $SUBSCRIPTION_ID"
-            exit 1
-          fi
-
-          # Assign AcrPull role
-          echo "Assigning AcrPull role..."
-          az role assignment create --assignee $SP_APP_ID --role AcrPull --scope $ACR_ID || true
-
-          # Assign AcrPush role
-          echo "Assigning AcrPush role..."
-          az role assignment create --assignee $SP_APP_ID --role AcrPush --scope $ACR_ID || true
-
-          # Verify assignments
-          echo "Verifying role assignments..."
-          az role assignment list --assignee $SP_APP_ID --scope $ACR_ID --output table
-
-          # Wait for role propagation
-          echo "Waiting for role assignment propagation..."
-          for i in {1..6}; do
-              echo "Checking SP access attempt $i..."
-              if az acr repository list --name $acrName --output tsv >/dev/null 2>&1; then
-                  echo "SP has access to ACR"
-                  break
-              else
-                  echo "SP does not have access yet, sleeping 10s..."
-                  sleep 10
-              fi
-          done
-
-          echo "✅ Service Principal now has pull/push access to ACR: $acrName"
-
-    # -----------------------------
     # 1. List local Docker images
     # -----------------------------
     - script: docker images
@@ -98,7 +44,7 @@ stages:
       displayName: Build Docker Image
 
     # -----------------------------
-    # 3. Login to ACR via SP with token
+    # 3. Login to ACR via SP token
     # -----------------------------
     - task: AzureCLI@2
       displayName: 'Login to ACR via Service Principal Token'
