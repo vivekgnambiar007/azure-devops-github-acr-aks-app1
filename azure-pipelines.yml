@@ -1,4 +1,4 @@
-# Azure DevOps Pipeline: Build, Push, and Verify Docker Image (SP-only, azurerm)
+# Azure DevOps Pipeline: Build, Push, and Verify Docker Image (SP-only, fixed)
 trigger:
 - master
 
@@ -64,6 +64,20 @@ stages:
           # Verify assignments
           echo "Verifying role assignments..."
           az role assignment list --assignee $SP_APP_ID --scope $ACR_ID --output table
+
+          # Wait for role propagation
+          echo "Waiting for role assignment propagation..."
+          for i in {1..6}; do
+              echo "Checking SP access attempt $i..."
+              if az acr repository list --name $acrName --output tsv >/dev/null 2>&1; then
+                  echo "SP has access to ACR"
+                  break
+              else
+                  echo "SP does not have access yet, sleeping 10s..."
+                  sleep 10
+              fi
+          done
+
           echo "✅ Service Principal now has pull/push access to ACR: $acrName"
 
     # -----------------------------
@@ -84,19 +98,27 @@ stages:
       displayName: Build Docker Image
 
     # -----------------------------
-    # 3. Login to ACR via Service Principal
+    # 3. Login to ACR via SP with token
     # -----------------------------
     - task: AzureCLI@2
-      displayName: 'Login to ACR via Service Principal'
+      displayName: 'Login to ACR via Service Principal Token'
       inputs:
         azureSubscription: $(azureSubscription)
         scriptType: 'bash'
         scriptLocation: 'inlineScript'
         inlineScript: |
           acrName=$(echo "$(containerRegistry)" | cut -d '.' -f1)
-          echo "Logging in to ACR: $acrName"
-          az acr login --name $acrName
-          echo "✅ Logged in to ACR successfully"
+          echo "Logging in to ACR: $acrName via SP token"
+
+          # Get SP AppId
+          SP_APP_ID=$(az account show --query user.name -o tsv)
+
+          # Get short-lived ACR token
+          TOKEN=$(az acr login --name $acrName --expose-token --query accessToken -o tsv)
+
+          # Login Docker CLI
+          echo $TOKEN | docker login $acrName --username $SP_APP_ID --password-stdin
+          echo "✅ Docker CLI logged in successfully"
 
     # -----------------------------
     # 4. Push Docker image to ACR
