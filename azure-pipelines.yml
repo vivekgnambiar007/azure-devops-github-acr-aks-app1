@@ -7,7 +7,7 @@ variables:
   containerRegistry: 'aksdevopsacr1.azurecr.io'
   imageRepository: 'vivekgnambiarazuredevopsgithubacraksapp'
   dockerfilePath: '$(Build.SourcesDirectory)/Git-Repository-files/Dockerfile'
-  dockerBuildContext: '$(Build.SourcesDirectory)/Git-Repository-files'  # Correct build context
+  dockerBuildContext: '$(Build.SourcesDirectory)/Git-Repository-files'  # Folder containing Dockerfile + index.html
   tag: '$(Build.BuildId)'
 
   # Agent VM
@@ -39,8 +39,8 @@ stages:
     - task: AzureCLI@2
       displayName: Login to ACR via OIDC
       inputs:
-        azureSubscription: ''       # Leave empty
-        useAzureAD: true            # Enables OIDC login
+        azureSubscription: ''         # Leave empty
+        authentication: 'OIDC'        # Use preview OIDC authentication
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
@@ -57,8 +57,8 @@ stages:
     - task: AzureCLI@2
       displayName: Verify image in ACR
       inputs:
-        azureSubscription: ''       # Leave empty
-        useAzureAD: true            # Enables OIDC login
+        azureSubscription: ''         # Leave empty
+        authentication: 'OIDC'        # Use OIDC login
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
