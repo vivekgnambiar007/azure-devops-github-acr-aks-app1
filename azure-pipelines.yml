@@ -12,9 +12,6 @@ variables:
   # Docker service connection (Push & Pull)
   dockerRegistryServiceConnection: '4650bbd6-f888-4909-85e3-55678c2a9d93'
 
-  # Azure subscription service connection (manual SP with tenant ID)
-  azureSubscription: 'AzureDevOps-Subscription-01'  # Replace with your manual service connection name
-
   # Agent VM
   vmImageName: 'ubuntu-latest'
 
@@ -43,11 +40,11 @@ stages:
           $(tag)
           latest
 
-    # 3. Verify the image exists in ACR
+    # 3. Verify the image exists in ACR using OIDC (no SP secret)
     - task: AzureCLI@2
       displayName: Verify image in ACR
       inputs:
-        azureSubscription: $(azureSubscription)
+        useAzureAD: true         # Enable OIDC authentication
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
