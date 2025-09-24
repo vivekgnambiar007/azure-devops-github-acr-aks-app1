@@ -1,9 +1,9 @@
-# Azure DevOps Pipeline: Build, Push, Verify Docker Image (SP-only secure)
+# Azure DevOps Pipeline: Build, Push, and Verify Docker Image (SP-only, Docker@2)
 trigger:
 - master
 
 variables:
-  # Azure Container Registry (ACR1)
+  # Azure Container Registry (ACR)
   containerRegistry: 'aksdevopsacr1.azurecr.io'
   imageRepository: 'vivekgnambiarazuredevopsgithubacraksapp'
   dockerfilePath: '$(Build.SourcesDirectory)/Git-Repository-files/Dockerfile'
@@ -25,6 +25,7 @@ stages:
     pool:
       vmImage: $(vmImageName)
     steps:
+
     # -----------------------------
     # 0. Ensure SP has ACR access
     # -----------------------------
@@ -65,42 +66,30 @@ stages:
           az role assignment list --assignee $SP_APP_ID --scope $ACR_ID --output table
           echo "✅ Service Principal now has pull/push access to ACR: $acrName"
 
+    # -----------------------------
     # 1. List local Docker images
+    # -----------------------------
     - script: docker images
       displayName: List Docker Images
 
-    # 2. Build Docker image
-    - script: |
-        docker build \
-          -t $(containerRegistry)/$(imageRepository):$(tag) \
-          -t $(containerRegistry)/$(imageRepository):latest \
-          -f $(dockerfilePath) \
-          $(dockerBuildContext)
-      displayName: Build Docker Image
-
-    # 3. Login to ACR using Service Principal (via Azure CLI)
-    - task: AzureCLI@2
-      displayName: 'Login to ACR via Service Principal'
+    # -----------------------------
+    # 2. Build and Push Docker image using Docker@2
+    # -----------------------------
+    - task: Docker@2
+      displayName: Build and Push Docker Image
       inputs:
-        azureSubscription: $(azureSubscription)
-        scriptType: 'bash'
-        scriptLocation: 'inlineScript'
-        inlineScript: |
-          acrName=$(echo "$(containerRegistry)" | cut -d '.' -f1)
-          echo "Logging in to ACR: $acrName"
-          az acr login --name $acrName
-          echo "✅ Logged in to ACR successfully"
+        containerRegistry: $(azureSubscription) # Uses the SP in the service connection
+        repository: $(imageRepository)
+        command: buildAndPush
+        Dockerfile: $(dockerfilePath)
+        buildContext: $(dockerBuildContext)
+        tags: |
+          $(tag)
+          latest
 
-    # 4. Push Docker image to ACR
-    - script: |
-        echo ">>> Pushing image with tag: $(tag)"
-        docker push $(containerRegistry)/$(imageRepository):$(tag)
-
-        echo ">>> Pushing image with tag: latest"
-        docker push $(containerRegistry)/$(imageRepository):latest
-      displayName: Push Docker Image to ACR
-
-    # 5. Verify image exists in ACR
+    # -----------------------------
+    # 3. Verify image exists in ACR
+    # -----------------------------
     - task: AzureCLI@2
       displayName: Verify Docker Image in ACR
       inputs:
