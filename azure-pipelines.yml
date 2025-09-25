@@ -1,18 +1,15 @@
-# Azure DevOps Pipeline: Build, Push, and Verify Docker Image (SP-only, fixed)
+# Azure DevOps Pipeline: Build, Push, and Verify Docker Image to ACR
 
 trigger:
 - master
 
 variables:
   # Azure Container Registry (ACR)
-  containerRegistry: 'aksdevopsacr1.azurecr.io'
+  containerRegistry: 'AzureDevOps-Subscription-01'   # <-- Service connection name
   imageRepository: 'vivekgnambiarazuredevopsgithubacraksapp'
   dockerfilePath: '$(Build.SourcesDirectory)/Git-Repository-files/Dockerfile'
   dockerBuildContext: '$(Build.SourcesDirectory)/Git-Repository-files'
   tag: '$(Build.BuildId)'
-
-  # Azure subscription service connection (SP-based)
-  azureSubscription: 'AzureDevOps-Subscription-01'
 
   # Agent VM
   vmImageName: 'ubuntu-latest'
@@ -28,64 +25,31 @@ stages:
     steps:
 
     # -----------------------------
-    # 1. List local Docker images
+    # 1. Build & Push with Docker@2
     # -----------------------------
-    - script: docker images
-      displayName: List Docker Images
-
-    # -----------------------------
-    # 2. Build Docker image
-    # -----------------------------
-    - script: |
-        docker build \
-          -t $(containerRegistry)/$(imageRepository):$(tag) \
-          -t $(containerRegistry)/$(imageRepository):latest \
-          -f $(dockerfilePath) \
-          $(dockerBuildContext)
-      displayName: Build Docker Image
-
-    # -----------------------------
-    # 3. Login to ACR via SP (service connection handles auth)
-    # -----------------------------
-    - task: AzureCLI@2
-      displayName: Login to ACR via Service Principal
+    - task: Docker@2
+      displayName: Build and Push Docker Image
       inputs:
-        azureSubscription: $(azureSubscription)
-        scriptType: 'bash'
-        scriptLocation: 'inlineScript'
-        inlineScript: |
-          acrName=$(echo "$(containerRegistry)" | cut -d '.' -f1)
-          echo "🔑 Logging in to ACR: $acrName using Service Principal..."
-
-          # Use ACR CLI login with SP token (from service connection)
-          TOKEN=$(az acr login --name $acrName --expose-token --query accessToken -o tsv)
-          USERNAME=00000000-0000-0000-0000-000000000000   # fixed GUID for SP login
-          
-          echo $TOKEN | docker login $acrName --username $USERNAME --password-stdin
-          echo "✅ Docker CLI logged in successfully"
+        containerRegistry: $(containerRegistry)   # Service connection, not registry URL
+        repository: $(imageRepository)
+        command: buildAndPush
+        Dockerfile: $(dockerfilePath)
+        buildContext: $(dockerBuildContext)
+        tags: |
+          $(tag)
+          latest
 
     # -----------------------------
-    # 4. Push Docker image to ACR
-    # -----------------------------
-    - script: |
-        echo ">>> Pushing image with tag: $(tag)"
-        docker push $(containerRegistry)/$(imageRepository):$(tag)
-
-        echo ">>> Pushing image with tag: latest"
-        docker push $(containerRegistry)/$(imageRepository):latest
-      displayName: Push Docker Image to ACR
-
-    # -----------------------------
-    # 5. Verify image exists in ACR
+    # 2. Verify image exists in ACR
     # -----------------------------
     - task: AzureCLI@2
       displayName: Verify Docker Image in ACR
       inputs:
-        azureSubscription: $(azureSubscription)
+        azureSubscription: $(containerRegistry)   # reuse the same service connection
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
-          acrName=$(echo "$(containerRegistry)" | cut -d '.' -f1)
+          acrName=$(az acr list --query "[0].name" -o tsv)  # resolve registry from connection
           echo "🔍 Checking repository $(imageRepository) for pushed tags..."
 
           tags=$(az acr repository show-tags \
