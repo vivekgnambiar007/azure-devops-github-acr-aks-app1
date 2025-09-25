@@ -1,4 +1,5 @@
 # Azure DevOps Pipeline: Build, Push, and Verify Docker Image (SP-only, fixed)
+
 trigger:
 - master
 
@@ -10,8 +11,8 @@ variables:
   dockerBuildContext: '$(Build.SourcesDirectory)/Git-Repository-files'
   tag: '$(Build.BuildId)'
 
-  # Azure subscription service connection
-  azureSubscription: 'aksdevopsacr1'
+  # Azure subscription service connection (SP-based)
+  azureSubscription: 'AzureDevOps-Subscription-01'
 
   # Agent VM
   vmImageName: 'ubuntu-latest'
@@ -44,46 +45,27 @@ stages:
       displayName: Build Docker Image
 
     # -----------------------------
-    # 3. Login to ACR via SP token
+    # 3. Login to ACR via SP (service connection handles auth)
     # -----------------------------
     - task: AzureCLI@2
-      displayName: 'Login to ACR via Service Principal Token'
+      displayName: Login to ACR via Service Principal
       inputs:
         azureSubscription: $(azureSubscription)
         scriptType: 'bash'
         scriptLocation: 'inlineScript'
         inlineScript: |
           acrName=$(echo "$(containerRegistry)" | cut -d '.' -f1)
-          echo "Logging in to ACR: $acrName via SP token"
+          echo "🔑 Logging in to ACR: $acrName using Service Principal..."
 
-          # Get SP AppId
-          SP_APP_ID=$(az account show --query user.name -o tsv)
-
-          # Get short-lived ACR token
+          # Use ACR CLI login with SP token (from service connection)
           TOKEN=$(az acr login --name $acrName --expose-token --query accessToken -o tsv)
-
-          # Login Docker CLI
-          echo $TOKEN | docker login $acrName --username $SP_APP_ID --password-stdin
+          USERNAME=00000000-0000-0000-0000-000000000000   # fixed GUID for SP login
+          
+          echo $TOKEN | docker login $acrName --username $USERNAME --password-stdin
           echo "✅ Docker CLI logged in successfully"
 
     # -----------------------------
-    # 4. Optional: Wait for Role Propagation
-    # -----------------------------
-    - script: |
-        acrName=$(echo "$(containerRegistry)" | cut -d '.' -f1)
-        for i in {1..6}; do
-          if az acr repository list --name $acrName --output tsv >/dev/null 2>&1; then
-              echo "SP has access to ACR"
-              break
-          else
-              echo "SP does not have access yet, sleeping 10s..."
-              sleep 10
-          fi
-        done
-      displayName: Wait for Role Propagation (Optional)
-
-    # -----------------------------
-    # 5. Push Docker image to ACR
+    # 4. Push Docker image to ACR
     # -----------------------------
     - script: |
         echo ">>> Pushing image with tag: $(tag)"
@@ -94,7 +76,7 @@ stages:
       displayName: Push Docker Image to ACR
 
     # -----------------------------
-    # 6. Verify image exists in ACR
+    # 5. Verify image exists in ACR
     # -----------------------------
     - task: AzureCLI@2
       displayName: Verify Docker Image in ACR
@@ -104,12 +86,17 @@ stages:
         scriptLocation: inlineScript
         inlineScript: |
           acrName=$(echo "$(containerRegistry)" | cut -d '.' -f1)
-          echo ">>> Checking repository $(imageRepository) for pushed tags..."
-          tags=$(az acr repository show-tags --name $acrName --repository $(imageRepository) --output tsv)
+          echo "🔍 Checking repository $(imageRepository) for pushed tags..."
+
+          tags=$(az acr repository show-tags \
+                  --name $acrName \
+                  --repository $(imageRepository) \
+                  --output tsv)
 
           echo ">>> Found tags: $tags"
           if [[ ! " $tags " =~ " $(tag) " ]]; then
-              echo ">>> ERROR: Image $(imageRepository):$(tag) not found in ACR!"
+              echo "❌ ERROR: Image $(imageRepository):$(tag) not found in ACR!"
               exit 1
           fi
-          echo ">>> Image $(imageRepository):$(tag) verified successfully."
+
+          echo "✅ Image $(imageRepository):$(tag) verified successfully."
