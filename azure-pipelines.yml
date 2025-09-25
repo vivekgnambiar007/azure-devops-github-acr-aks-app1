@@ -11,7 +11,7 @@ variables:
   tag: '$(Build.BuildId)'
 
   # Azure subscription service connection
-  azureSubscription: 'AzureDevOps-Subscription-01'
+  azureSubscription: 'aksdevopsacr1'
 
   # Agent VM
   vmImageName: 'ubuntu-latest'
