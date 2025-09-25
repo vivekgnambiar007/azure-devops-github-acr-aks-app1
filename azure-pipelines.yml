@@ -4,15 +4,19 @@ trigger:
 - master
 
 variables:
+  # -----------------------------
   # Azure Container Registry (ACR)
-  containerRegistry: 'AzureDevOps-Subscription-01'   # <-- Service connection name
-  containerRegistry1: 'aksdevopsacr1'
+  # -----------------------------
+  dockerRegistryServiceConnection: 'aksdevopsacr1'       # Docker registry SP connection (dockerregistry type)
+  azureSubscriptionServiceConnection: 'AzureDevOps-Subscription-01'  # Azure RM SP connection (azurerm type)
   imageRepository: 'vivekgnambiarazuredevopsgithubacraksapp'
   dockerfilePath: '$(Build.SourcesDirectory)/Git-Repository-files/Dockerfile'
   dockerBuildContext: '$(Build.SourcesDirectory)/Git-Repository-files'
   tag: '$(Build.BuildId)'
 
+  # -----------------------------
   # Agent VM
+  # -----------------------------
   vmImageName: 'ubuntu-latest'
 
 stages:
@@ -26,12 +30,12 @@ stages:
     steps:
 
     # -----------------------------
-    # 1. Build & Push with Docker@2
+    # 1. Build & Push Docker Image
     # -----------------------------
     - task: Docker@2
       displayName: Build and Push Docker Image
       inputs:
-        containerRegistry: $(containerRegistry1)   # Service connection, not registry URL
+        containerRegistry: $(dockerRegistryServiceConnection)
         repository: $(imageRepository)
         command: buildAndPush
         Dockerfile: $(dockerfilePath)
@@ -46,13 +50,18 @@ stages:
     - task: AzureCLI@2
       displayName: Verify Docker Image in ACR
       inputs:
-        azureSubscription: $(containerRegistry)   # reuse the same service connection
+        azureSubscription: $(azureSubscriptionServiceConnection)
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
-          acrName=$(az acr list --query "[0].name" -o tsv)  # resolve registry from connection
-          echo "🔍 Checking repository $(imageRepository) for pushed tags..."
+          echo "🔍 Resolving ACR name from Azure subscription..."
+          acrName=$(az acr list --query "[?name=='aksdevopsacr1'].name" -o tsv)
+          if [ -z "$acrName" ]; then
+              echo "❌ ERROR: Could not find ACR 'aksdevopsacr1' in the subscription!"
+              exit 1
+          fi
 
+          echo "🔍 Checking repository $(imageRepository) for pushed tags..."
           tags=$(az acr repository show-tags \
                   --name $acrName \
                   --repository $(imageRepository) \
