@@ -6,6 +6,7 @@ trigger:
 variables:
   # Azure Container Registry (ACR)
   containerRegistry: 'AzureDevOps-Subscription-01'   # <-- Service connection name
+  containerRegistry1: 'aksdevopsacr1'
   imageRepository: 'vivekgnambiarazuredevopsgithubacraksapp'
   dockerfilePath: '$(Build.SourcesDirectory)/Git-Repository-files/Dockerfile'
   dockerBuildContext: '$(Build.SourcesDirectory)/Git-Repository-files'
@@ -30,7 +31,7 @@ stages:
     - task: Docker@2
       displayName: Build and Push Docker Image
       inputs:
-        containerRegistry: $(containerRegistry)   # Service connection, not registry URL
+        containerRegistry: $(containerRegistry1)   # Service connection, not registry URL
         repository: $(imageRepository)
         command: buildAndPush
         Dockerfile: $(dockerfilePath)
