@@ -1,14 +1,12 @@
 # Azure DevOps Pipeline: Build, Push, and Verify Docker Image to ACR
-
 trigger:
 - master
 
 variables:
   # Azure Container Registry (ACR)
-  acrName: 'aksdevopsacr1'
-  dockerRegistryServiceConnection: 'aksdevopsacr1'   # Docker registry service connection
+  containerRegistry: 'aksdevopsacr1'   # Docker registry service connection
   imageRepository: 'vivekgnambiarazuredevopsgithubacraksapp'
-  dockerfilePath: 'Git-Repository-files/Dockerfile'   # relative path in repo
+  dockerfilePath: 'Git-Repository-files/Dockerfile'
   dockerBuildContext: 'Git-Repository-files'
   tag: '$(Build.BuildId)'
 
@@ -20,40 +18,25 @@ stages:
   displayName: Build, Push, and Verify Docker Image
   jobs:
   - job: Build
-    displayName: Docker Build & Push
+    displayName: Build Job
     pool:
       vmImage: $(vmImageName)
     steps:
 
     # -----------------------------
-    # 1. Enable system diagnostics for debugging
+    # 1. Enable system diagnostics for detailed logs
     # -----------------------------
     - script: |
-        echo "##[debug] Enabling system diagnostics"
-        echo "##vso[task.debug]true"
-      displayName: 'Enable System Diagnostics'
+        echo "##vso[task.setvariable variable=System.Debug]true"
+      displayName: Enable System Diagnostics
 
     # -----------------------------
-    # 2. Login to Azure & ACR using SPN
-    # -----------------------------
-    - task: AzureCLI@2
-      displayName: 'Login to ACR using Service Principal'
-      inputs:
-        azureSubscription: 'AzureDevOps-Subscription-01'   # AzureRM service connection
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          echo "🔑 Logging in to ACR..."
-          az acr login --name $(acrName)
-          echo "✅ Logged in to ACR $(acrName) successfully"
-
-    # -----------------------------
-    # 3. Build & Push Docker Image
+    # 2. Build & Push Docker Image with detailed logging
     # -----------------------------
     - task: Docker@2
       displayName: Build and Push Docker Image
       inputs:
-        containerRegistry: $(dockerRegistryServiceConnection)  # Docker registry service connection
+        containerRegistry: $(containerRegistry)       # Docker registry connection
         repository: $(imageRepository)
         command: buildAndPush
         Dockerfile: $(dockerfilePath)
@@ -61,23 +44,29 @@ stages:
         tags: |
           $(tag)
           latest
-        addPipelineData: true
+        arguments: '--log-level debug'   # <-- detailed logging for Docker push
 
     # -----------------------------
-    # 4. Verify image exists in ACR
+    # 3. Verify image exists in ACR
     # -----------------------------
     - task: AzureCLI@2
       displayName: Verify Docker Image in ACR
       inputs:
-        azureSubscription: 'AzureDevOps-Subscription-01'   # AzureRM service connection
+        azureSubscription: 'AzureDevOps-Subscription-01'  # AzureRM service connection
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
-          set -e
+          set -euo pipefail
+          echo "🔍 Resolving ACR name..."
+          acrName='aksdevopsacr1'
           echo "🔍 Checking repository $(imageRepository) for pushed tags..."
-          tags=$(az acr repository show-tags --name $(acrName) --repository $(imageRepository) --output tsv)
-          echo ">>> Found tags: $tags"
 
+          tags=$(az acr repository show-tags \
+                  --name $acrName \
+                  --repository $(imageRepository) \
+                  --output tsv)
+
+          echo ">>> Found tags: $tags"
           if [[ ! " $tags " =~ " $(tag) " ]]; then
               echo "❌ ERROR: Image $(imageRepository):$(tag) not found in ACR!"
               exit 1
