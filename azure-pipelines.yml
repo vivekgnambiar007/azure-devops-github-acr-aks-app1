@@ -1,22 +1,17 @@
-# Azure DevOps Pipeline: Build, Push, and Verify Docker Image to ACR
-
+# Azure DevOps Pipeline: Build and Push Docker Image via AzureCLI
 trigger:
 - master
 
 variables:
-  # -----------------------------
-  # Azure Container Registry (ACR)
-  # -----------------------------
-  dockerRegistryServiceConnection: 'aksdevopsacr1'       # Docker registry SP connection (dockerregistry type)
-  azureSubscriptionServiceConnection: 'AzureDevOps-Subscription-01'  # Azure RM SP connection (azurerm type)
+  # Azure Container Registry
+  azureSubscription: 'AzureDevOps-Subscription-01'   # AzureRM service connection
+  acrName: 'aksdevopsacr1'
   imageRepository: 'vivekgnambiarazuredevopsgithubacraksapp'
   dockerfilePath: '$(Build.SourcesDirectory)/Git-Repository-files/Dockerfile'
   dockerBuildContext: '$(Build.SourcesDirectory)/Git-Repository-files'
   tag: '$(Build.BuildId)'
 
-  # -----------------------------
   # Agent VM
-  # -----------------------------
   vmImageName: 'ubuntu-latest'
 
 stages:
@@ -30,40 +25,62 @@ stages:
     steps:
 
     # -----------------------------
-    # 1. Build & Push Docker Image
-    # -----------------------------
-    - task: Docker@2
-      displayName: Build and Push Docker Image
-      inputs:
-        containerRegistry: $(dockerRegistryServiceConnection)
-        repository: $(imageRepository)
-        command: buildAndPush
-        Dockerfile: $(dockerfilePath)
-        buildContext: $(dockerBuildContext)
-        tags: |
-          $(tag)
-          latest
-
-    # -----------------------------
-    # 2. Verify image exists in ACR
+    # 1. Login to ACR
     # -----------------------------
     - task: AzureCLI@2
-      displayName: Verify Docker Image in ACR
+      displayName: 'Login to ACR'
       inputs:
-        azureSubscription: $(azureSubscriptionServiceConnection)
+        azureSubscription: $(azureSubscription)
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
-          echo "🔍 Resolving ACR name from Azure subscription..."
-          acrName=$(az acr list --query "[?name=='aksdevopsacr1'].name" -o tsv)
-          if [ -z "$acrName" ]; then
-              echo "❌ ERROR: Could not find ACR 'aksdevopsacr1' in the subscription!"
-              exit 1
-          fi
+          echo "🔑 Logging into ACR $(acrName)..."
+          az acr login --name $(acrName)
 
-          echo "🔍 Checking repository $(imageRepository) for pushed tags..."
+    # -----------------------------
+    # 2. Build Docker image
+    # -----------------------------
+    - task: AzureCLI@2
+      displayName: 'Build Docker Image'
+      inputs:
+        azureSubscription: $(azureSubscription)
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          echo "🏗 Building Docker image..."
+          docker build \
+            -f $(dockerfilePath) \
+            -t $(acrName).azurecr.io/$(imageRepository):$(tag) \
+            -t $(acrName).azurecr.io/$(imageRepository):latest \
+            $(dockerBuildContext)
+
+    # -----------------------------
+    # 3. Push Docker image
+    # -----------------------------
+    - task: AzureCLI@2
+      displayName: 'Push Docker Image to ACR'
+      inputs:
+        azureSubscription: $(azureSubscription)
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          echo "🚀 Pushing Docker image to ACR..."
+          docker push $(acrName).azurecr.io/$(imageRepository):$(tag)
+          docker push $(acrName).azurecr.io/$(imageRepository):latest
+
+    # -----------------------------
+    # 4. Verify Docker image
+    # -----------------------------
+    - task: AzureCLI@2
+      displayName: 'Verify Docker Image in ACR'
+      inputs:
+        azureSubscription: $(azureSubscription)
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          echo "🔍 Verifying image exists in ACR..."
           tags=$(az acr repository show-tags \
-                  --name $acrName \
+                  --name $(acrName) \
                   --repository $(imageRepository) \
                   --output tsv)
 
