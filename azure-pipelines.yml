@@ -1,22 +1,19 @@
-# Azure DevOps Pipeline: Build and Push Docker Image via AzureCLI
+# Azure DevOps Pipeline: Build, Push, and Verify Docker Image to ACR (az acr build)
+
 trigger:
 - master
 
 variables:
-  # Azure Container Registry
-  azureSubscription: 'AzureDevOps-Subscription-01'   # AzureRM service connection
   acrName: 'aksdevopsacr1'
   imageRepository: 'vivekgnambiarazuredevopsgithubacraksapp'
-  dockerfilePath: '$(Build.SourcesDirectory)/Git-Repository-files/Dockerfile'
-  dockerBuildContext: '$(Build.SourcesDirectory)/Git-Repository-files'
+  dockerfilePath: 'Git-Repository-files/Dockerfile'
+  dockerBuildContext: 'Git-Repository-files'
   tag: '$(Build.BuildId)'
-
-  # Agent VM
   vmImageName: 'ubuntu-latest'
 
 stages:
 - stage: Build
-  displayName: Build, Push, and Verify Docker Image
+  displayName: Build and Push Docker Image with az acr build
   jobs:
   - job: Build
     displayName: Build Job
@@ -25,69 +22,46 @@ stages:
     steps:
 
     # -----------------------------
-    # 1. Login to ACR
+    # 1. Build & Push using az acr build
     # -----------------------------
     - task: AzureCLI@2
-      displayName: 'Login to ACR'
+      displayName: Build & Push Docker Image to ACR
       inputs:
-        azureSubscription: $(azureSubscription)
+        azureSubscription: 'AzureDevOps-Subscription-01'
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
-          echo "🔑 Logging into ACR $(acrName)..."
-          az acr login --name $(acrName)
+          set -x  # Enable shell tracing
+
+          echo "🔑 Logging into ACR (debug)..."
+          az acr login --name $(acrName) --debug
+
+          echo "📦 Building & pushing image via Azure ACR Tasks..."
+          az acr build \
+            --registry $(acrName) \
+            --image $(imageRepository):$(tag) \
+            --image $(imageRepository):latest \
+            --file $(dockerfilePath) \
+            $(dockerBuildContext) \
+            --no-logs \
+            --debug
 
     # -----------------------------
-    # 2. Build Docker image
+    # 2. Verify image exists in ACR
     # -----------------------------
     - task: AzureCLI@2
-      displayName: 'Build Docker Image'
+      displayName: Verify Docker Image in ACR
       inputs:
-        azureSubscription: $(azureSubscription)
+        azureSubscription: 'AzureDevOps-Subscription-01'
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
-          echo "🏗 Building Docker image..."
-          docker build \
-            -f $(dockerfilePath) \
-            -t $(acrName).azurecr.io/$(imageRepository):$(tag) \
-            -t $(acrName).azurecr.io/$(imageRepository):latest \
-            $(dockerBuildContext)
-
-    # -----------------------------
-    # 3. Push Docker image
-    # -----------------------------
-    - task: AzureCLI@2
-      displayName: 'Push Docker Image to ACR'
-      inputs:
-        azureSubscription: $(azureSubscription)
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          echo "🚀 Pushing Docker image to ACR..."
-          docker push $(acrName).azurecr.io/$(imageRepository):$(tag)
-          docker push $(acrName).azurecr.io/$(imageRepository):latest
-
-    # -----------------------------
-    # 4. Verify Docker image
-    # -----------------------------
-    - task: AzureCLI@2
-      displayName: 'Verify Docker Image in ACR'
-      inputs:
-        azureSubscription: $(azureSubscription)
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          echo "🔍 Verifying image exists in ACR..."
-          tags=$(az acr repository show-tags \
-                  --name $(acrName) \
-                  --repository $(imageRepository) \
-                  --output tsv)
-
+          set -x  # Enable shell tracing
+          echo "🔍 Checking pushed image tags in ACR..."
+          tags=$(az acr repository show-tags --name $(acrName) --repository $(imageRepository) -o tsv --debug)
           echo ">>> Found tags: $tags"
           if [[ ! " $tags " =~ " $(tag) " ]]; then
               echo "❌ ERROR: Image $(imageRepository):$(tag) not found in ACR!"
               exit 1
           fi
-
           echo "✅ Image $(imageRepository):$(tag) verified successfully."
