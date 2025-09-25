@@ -5,7 +5,7 @@ trigger:
 
 variables:
   # Azure Container Registry (ACR)
-  containerRegistry: 'aksdevopsacr1'   # <-- Service connection name
+  containerRegistry: 'AzureDevOps-Subscription-01'   # <-- Service connection name
   imageRepository: 'vivekgnambiarazuredevopsgithubacraksapp'
   dockerfilePath: '$(Build.SourcesDirectory)/Git-Repository-files/Dockerfile'
   dockerBuildContext: '$(Build.SourcesDirectory)/Git-Repository-files'
